@@ -9,3 +9,4 @@ grok-build.log
 .DS_Store
 grok-codeblocks*.log
 grok-thread*.log
+grok-shortnum.log

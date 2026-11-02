@@ -145,13 +145,14 @@ A section is a thread in any of these cases:
 
 - The heading contains the word `thread` or `threads`, in any case, and the body separates tweets with a full `1/N` … `N/N` run or with a line that is exactly `---`.
 - The body has a complete marker run `1/N`, `2/N`, … `N/N` for an `N` of at least 2. The heading does not have to say thread. A marker is a whole line, or the start of a line with the tweet after it (`1/5 The pier is dark.`). The marker is not weighed. Text before `1/N` is a note and is not a tweet. A partial run, such as only `1/5` and `2/5`, stays one post.
+- Lines start with `1/ `, `2/ `, `3/ `, and so on: a number, a slash, and a space, and no total. This can be the section body or the only fenced code block. Numbering must be consecutive and start at 1, with at least two tweets. The heading does not have to say thread. The marker stays in the tweet and is weighed, because that line is published as-is. Text on the following lines belongs to that tweet, including text after the last numbered tweet. Text before `1/` is a note and is not a tweet. A gap, a run that does not start at 1, or a lone `1/` stays one post. An `n/N` line is not this style. A thread already split by `---` is unchanged.
 - One fenced code block has tweets separated by a line that is exactly `---`. Fence markers are not part of a tweet. Text outside that fence is not part of the thread, with or without `--code-blocks-only`. Put notes outside the fence.
 
 A line of `---` in ordinary prose does not split a post. A heading such as `Threaded needle` is not a thread heading, because `thread` is not a whole word there. A single post is still weighed as one block. `--code-blocks-only` is unchanged for a post that is not a thread: fence text is the post, and lines outside the fence are ignored.
 
 A thread stays one draft and one schedule slot. `tweets` lists each tweet's text, 1-based index, weighted length, and `overLimit` flag. `weightedLength` on the draft is the longest tweet, which is what the limit uses. `text` is the tweets joined by a blank line, so the weighed length of `text` can be over the limit while `overLimit` is false.
 
-`fixtures/threads/five-short.md` is five numbered tweets under a heading that contains `Thread`. Each tweet is under 280 and together they weigh more than 280, so `check` exits 0. `fixtures/threads/third-over.md` is five tweets inside one code block, separated by `---`, and tweet 3 is over 280. `check` exits 1 and names tweet 3. Notes under that fence are not tweets.
+`fixtures/threads/five-short.md` is five numbered tweets under a heading that contains `Thread`. Each tweet is under 280 and together they weigh more than 280, so `check` exits 0. `fixtures/threads/third-over.md` is five tweets inside one code block, separated by `---`, and tweet 3 is over 280. `check` exits 1 and names tweet 3. Notes under that fence are not tweets. `fixtures/threads/short-slash.md` is five tweets in the short `1/ ` style inside one code block, under a heading that contains `Thread`. The markers stay in the tweets. The line under `5/ ` belongs to tweet 5. Each tweet is under 280 and together they weigh more than 280, so `check` exits 0. The note under that fence is not a tweet.
 
 ## Near-duplicates
 
@@ -199,4 +200,4 @@ The program reads and writes local files only. It does not import an HTTP client
 npm test
 ```
 
-The suite covers weighing, Markdown splitting, `--code-blocks-only`, threads (a 5-tweet thread whose total is over the limit, and a thread whose third tweet is over), image checks, near-duplicates, the UTC schedule, both output formats, and the CLI. It also scans `src/` for network and process APIs.
+The suite covers weighing, Markdown splitting, `--code-blocks-only`, threads (a 5-tweet `1/N` thread whose total is over the limit, a thread whose third tweet is over, and a short `1/` `2/` `3/` thread whose markers stay in the text), image checks, near-duplicates, the UTC schedule, both output formats, and the CLI. It also scans `src/` for network and process APIs.

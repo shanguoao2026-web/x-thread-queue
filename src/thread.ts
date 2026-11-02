@@ -1,22 +1,33 @@
 /**
  * Splits a thread section into tweets.
  *
- * A section is a thread when the heading contains the word "thread", when the
- * body has a complete 1/N … N/N marker run, or when a single fenced code block
- * is divided by a line that is exactly `---`. Single posts are left untouched:
- * a `---` line in ordinary prose is not a separator.
+ * A section is a thread when the body has a complete 1/N … N/N marker run,
+ * when it has a consecutive short run `1/ ` `2/ ` `3/ ` … (number, slash,
+ * space, no total), or when a `---` line separates tweets. A `---` line
+ * counts in a single fenced code block, or in prose under a heading that
+ * contains the word "thread". A `---` line in ordinary prose is not a
+ * separator. An `n/N` run and a `---` split are tried first, so those styles
+ * stay as they are when a short `n/ ` line also appears.
+ *
+ * An `n/N` marker is a label and is not part of the tweet. A short `n/ `
+ * marker stays in the tweet, because that form is published as-is.
  */
 
 export interface TweetSlice {
-  /** 1-based tweet number. Taken from an `n/N` marker when the thread uses one. */
+  /** 1-based tweet number. Taken from an `n/N` or short `n/` marker when the thread uses one. */
   index: number;
-  /** Raw tweet text, without the marker line or the `---` separator. */
+  /**
+   * Raw tweet text. An `n/N` marker and a `---` separator are left out.
+   * A short `n/` marker stays in the text.
+   */
   text: string;
   /** 0-based line index of this slice inside the section body. */
   bodyLine: number;
 }
 
 const TWEET_MARKER_RE = /^[ \t]*(\d+)[ \t]*\/[ \t]*(\d+)[ \t]*(.*)$/u;
+/** `1/ text` — a number, a slash, and a space, with no total. */
+const SHORT_MARKER_RE = /^[ \t]*(\d+)\/[ \t]+(.*)$/u;
 const DASH_RE = /^[ \t]*---[ \t]*$/u;
 
 export function findThreadSlices(
@@ -34,7 +45,8 @@ export function findThreadSlices(
     if (fence) {
       const fromFence =
         splitNumbered(fence.inner, fence.innerBodyLine) ??
-        splitDashed(fence.inner, fence.innerBodyLine);
+        splitDashed(fence.inner, fence.innerBodyLine) ??
+        splitShortNumbered(fence.inner, fence.innerBodyLine);
       if (fromFence) return fromFence;
     }
   }
@@ -49,6 +61,8 @@ export function findThreadSlices(
     const dashed = splitDashed(source, 0);
     if (dashed) return dashed;
   }
+  const short = splitShortNumbered(source, 0);
+  if (short) return short;
   return null;
 }
 
@@ -187,6 +201,46 @@ function splitNumbered(source: string, baseBodyLine: number): TweetSlice[] | nul
       index: marker.index,
       text,
       bodyLine: baseBodyLine + contentLine,
+    });
+  }
+  return slices.length >= 2 ? slices : null;
+}
+
+/**
+ * A consecutive run of `1/ `, `2/ `, `3/ ` … with no total. The marker stays in
+ * the tweet. Lines after a marker belong to that tweet, including lines after
+ * the last marker. Text before `1/` is a note. A line that matches `n/N` is
+ * left for the numbered splitter and is not a short marker. Returns null
+ * unless the markers are exactly 1, 2, 3, … in order.
+ */
+function splitShortNumbered(source: string, baseBodyLine: number): TweetSlice[] | null {
+  const lines = source.split("\n");
+  const markers: { line: number; index: number }[] = [];
+  for (let line = 0; line < lines.length; line += 1) {
+    const raw = lines[line] ?? "";
+    if (TWEET_MARKER_RE.test(raw)) continue;
+    const match = SHORT_MARKER_RE.exec(raw);
+    if (!match) continue;
+    const digits = match[1] ?? "";
+    const index = Number(digits);
+    if (!Number.isInteger(index) || index < 1) continue;
+    if (String(index) !== digits) continue;
+    markers.push({ line, index });
+  }
+  if (markers.length < 2) return null;
+  for (let i = 0; i < markers.length; i += 1) {
+    if (markers[i]?.index !== i + 1) return null;
+  }
+
+  const slices: TweetSlice[] = [];
+  for (let i = 0; i < markers.length; i += 1) {
+    const marker = markers[i];
+    if (!marker) continue;
+    const nextLine = markers[i + 1]?.line ?? lines.length;
+    slices.push({
+      index: marker.index,
+      text: lines.slice(marker.line, nextLine).join("\n"),
+      bodyLine: baseBodyLine + marker.line,
     });
   }
   return slices.length >= 2 ? slices : null;

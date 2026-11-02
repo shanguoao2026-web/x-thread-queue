@@ -312,14 +312,205 @@ test("CRLF markers still split and a single post is unchanged", () => {
   assert.deepEqual(flagged, unfenced);
 });
 
-test("the valid thread is one schedule slot and the long tweet is skipped", () => {
+test("short slash markers stay in the tweet and trailing lines join the last one", () => {
+  const file = path.join(process.cwd(), "fixtures/threads/short-slash.md");
+  const markdown = fs.readFileSync(file, "utf8");
+  const note = markdown.split("\n").find((line) => line.startsWith("备注："));
+  assert.ok(note);
+  assert.ok(measureText(note).weightedLength > 280);
+
+  const plain = readFixture("short-slash.md");
+  const fenced = parseMarkdown({
+    absolutePath: file,
+    displayPath: "fixtures/threads/short-slash.md",
+    markdown,
+    limit: 280,
+    usedIds: new Set(),
+    codeBlocksOnly: true,
+  });
+  assert.equal(plain.length, 1);
+  assert.equal(fenced.length, 1);
+  const draft = plain[0];
+  assert.ok(draft);
+  assert.equal(draft.title, "Thread: slash marks");
+  assert.equal(draft.id, "short-slash--thread-slash-marks");
+  assert.deepEqual(fenced[0]?.tweets, draft.tweets);
+  assert.equal(fenced[0]?.text, draft.text);
+
+  assert.equal(draft.tweets?.length, 5);
+  assert.deepEqual(
+    draft.tweets?.map((tweet) => tweet.index),
+    [1, 2, 3, 4, 5],
+  );
+  const tweets = draft.tweets ?? [];
+  const expectedStarts = ["1/ ", "2/ ", "3/ ", "4/ ", "5/ "];
+  tweets.forEach((tweet, index) => {
+    assert.equal(tweet.text.startsWith(expectedStarts[index] ?? ""), true);
+    assert.equal(tweet.weightedLength, measureText(tweet.text).weightedLength);
+    assert.ok(tweet.weightedLength > expectedStarts[index]?.length);
+    assert.ok(tweet.weightedLength <= 280);
+    assert.equal(tweet.overLimit, false);
+  });
+  assert.equal(
+    tweets[4]?.text,
+    [
+      "5/ The ledger line for tonight is the height at the dock step, written after the lamp is trimmed.",
+      "The spare wick stays in the tin under the shelf.",
+    ].join("\n"),
+  );
+  const total = tweets.reduce((sum, tweet) => sum + tweet.weightedLength, 0);
+  assert.ok(total > 280);
+  assert.ok(measureText(draft.text).weightedLength > 280);
+  assert.equal(draft.weightedLength, Math.max(...tweets.map((tweet) => tweet.weightedLength)));
+  assert.equal(draft.text.includes("备注"), false);
+  assert.equal(draft.text.includes("```"), false);
+  assert.equal(draft.overLimit, false);
+  assert.equal(draft.valid, true);
+  assert.deepEqual(draft.issues, []);
+
+  const report = formatCheck(
+    analyzeFiles(collectMarkdownFiles(["fixtures/threads/short-slash.md"]), {
+      limit: 280,
+      threshold: 0.8,
+    }),
+  );
+  assert.match(report, /tweet 1: /);
+  assert.match(report, /tweet 5: /);
+  assert.equal(report.includes("over_limit"), false);
+});
+
+test("a short slash run keeps the marker in the weighted length", () => {
+  const markdown = ["## Dispatch", "", "1/ abcdefgh", "2/ ok", ""].join("\n");
+  const drafts = parse(markdown, 10);
+  const draft = drafts[0];
+  assert.ok(draft?.tweets);
+  assert.deepEqual(
+    draft.tweets.map((tweet) => tweet.text),
+    ["1/ abcdefgh", "2/ ok"],
+  );
+  assert.equal(draft.tweets[0]?.weightedLength, 11);
+  assert.equal(draft.tweets[0]?.overLimit, true);
+  assert.equal(draft.tweets[1]?.weightedLength, 5);
+  assert.equal(draft.tweets[1]?.overLimit, false);
+  assert.equal(draft.weightedLength, 11);
+  assert.deepEqual(
+    draft.issues.map((issue) => [issue.tweet, issue.message]),
+    [[1, "Tweet 1 weighted length 11 exceeds the limit of 10"]],
+  );
+});
+
+test("lines after each short marker belong to that tweet, and notes before 1/ do not", () => {
+  const preamble = "i".repeat(300);
+  const markdown = [
+    "## Quay notes",
+    "",
+    preamble,
+    "",
+    "1/ Alpha",
+    "more alpha",
+    "",
+    "2/ Beta",
+    "more beta",
+    "tail",
+    "",
+  ].join("\n");
+  const drafts = parse(markdown);
+  const draft = drafts[0];
+  assert.ok(draft?.tweets);
+  assert.deepEqual(
+    draft.tweets.map((tweet) => tweet.text),
+    ["1/ Alpha\nmore alpha", "2/ Beta\nmore beta\ntail"],
+  );
+  assert.equal(draft.text.includes(preamble), false);
+  assert.equal(draft.tweets[0]?.weightedLength, measureText("1/ Alpha\nmore alpha").weightedLength);
+  assert.equal(draft.overLimit, false);
+  assert.equal(draft.valid, true);
+  assert.ok(measureText(`${preamble}\n\n${draft.text}`).weightedLength > 280);
+});
+
+test("a broken short run stays one post and a dash split is unchanged", () => {
+  const gap = ["## Thread: quay", "", "1/ " + "a".repeat(200), "", "3/ " + "b".repeat(200), ""].join(
+    "\n",
+  );
+  const gapped = parse(gap);
+  assert.equal(gapped[0]?.tweets, undefined);
+  assert.equal(gapped[0]?.overLimit, true);
+
+  const later = ["## Notes", "", "2/ Alpha", "3/ Beta", ""].join("\n");
+  assert.equal(parse(later)[0]?.tweets, undefined);
+
+  const glued = ["## Notes", "", "1/Alpha", "2/Beta", ""].join("\n");
+  assert.equal(parse(glued)[0]?.tweets, undefined);
+
+  const spacedSlash = ["## Notes", "", "1 / Alpha", "2 / Beta", ""].join("\n");
+  assert.equal(parse(spacedSlash)[0]?.tweets, undefined);
+
+  const alone = ["## Notes", "", "1/ only this line", ""].join("\n");
+  assert.equal(parse(alone)[0]?.tweets, undefined);
+  assert.equal(parse(alone)[0]?.text, "1/ only this line");
+
+  const spacedTotal = ["## Notes", "", "1/ 5", "c".repeat(200), "", "2/ 5", "d".repeat(200), ""].join(
+    "\n",
+  );
+  const partial = parse(spacedTotal);
+  assert.equal(partial[0]?.tweets, undefined);
+  assert.equal(partial[0]?.overLimit, true);
+  assert.match(partial[0]?.issues[0]?.message ?? "", /^Weighted length /);
+
+  const dashed = [
+    "## Thread",
+    "",
+    "intro stays in the first tweet",
+    "",
+    "---",
+    "",
+    "1/ not a short thread",
+    "",
+    "---",
+    "",
+    "2/ because dashes win",
+    "",
+  ].join("\n");
+  const byDash = parse(dashed);
+  assert.deepEqual(
+    byDash[0]?.tweets?.map((tweet) => tweet.text),
+    ["intro stays in the first tweet", "1/ not a short thread", "2/ because dashes win"],
+  );
+  assert.equal(byDash[0]?.text.includes("---"), false);
+
+  const fenced = [
+    "## Batches",
+    "",
+    "```",
+    "before",
+    "",
+    "---",
+    "",
+    "1/ first",
+    "",
+    "---",
+    "",
+    "2/ second",
+    "```",
+    "",
+  ].join("\n");
+  const fenceDash = parse(fenced);
+  assert.deepEqual(
+    fenceDash[0]?.tweets?.map((tweet) => tweet.text),
+    ["before", "1/ first", "2/ second"],
+  );
+  assert.equal(fenceDash[0]?.text.includes("---"), false);
+  assert.equal(fenceDash[0]?.text.includes("```"), false);
+});
+
+test("valid threads take one schedule slot each and the long tweet is skipped", () => {
   const analysis = analyzeFiles(collectMarkdownFiles(["fixtures/threads"]), {
     limit: 280,
     threshold: 0.8,
   });
-  assert.equal(analysis.drafts.length, 2);
-  assert.equal(analysis.summary.drafts, 2);
-  assert.equal(analysis.summary.valid, 1);
+  assert.equal(analysis.drafts.length, 3);
+  assert.equal(analysis.summary.drafts, 3);
+  assert.equal(analysis.summary.valid, 2);
   assert.equal(analysis.summary.invalid, 1);
   assert.equal(analysis.summary.overLimit, 1);
   assert.equal(analysis.duplicates.length, 0);
@@ -334,7 +525,7 @@ test("the valid thread is one schedule slot and the long tweet is skipped", () =
   });
   assert.deepEqual(
     report.schedule.map((entry) => entry.draftId),
-    ["five-short--thread-five-short-notes"],
+    ["five-short--thread-five-short-notes", "short-slash--thread-slash-marks"],
   );
   assert.deepEqual(
     report.skipped.map((entry) => entry.draftId),

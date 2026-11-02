@@ -18,7 +18,7 @@ export interface Issue {
 
 /** One tweet inside a thread draft. Absent on a single post. */
 export interface TweetPart {
-  /** 1-based position. An `n/N` marker uses `n`; a `---` thread numbers in order. */
+  /** 1-based position. An `n/N` or short `n/` marker uses `n`; a `---` thread numbers in order. */
   index: number;
   text: string;
   weightedLength: number;

@@ -213,6 +213,18 @@ test("a thread is checked per tweet", () => {
   assert.match(under.stdout, /tweet 5: /);
   assert.equal(under.stdout.includes("over_limit"), false);
 
+  const slash = run(["check", "fixtures/threads/short-slash.md", "--json"]);
+  assert.equal(slash.status, 0);
+  const slashJson = JSON.parse(slash.stdout) as {
+    drafts: { tweets?: { index: number; text: string; overLimit: boolean }[] }[];
+  };
+  const slashTweets = slashJson.drafts[0]?.tweets;
+  assert.equal(slashTweets?.length, 5);
+  assert.equal(slashTweets?.[0]?.text.startsWith("1/ "), true);
+  assert.equal(slashTweets?.[4]?.text.startsWith("5/ "), true);
+  assert.equal(slashTweets?.[4]?.text.includes("The spare wick stays in the tin under the shelf."), true);
+  assert.equal(slashTweets?.some((tweet) => tweet.overLimit), false);
+
   const over = run(["check", "fixtures/threads/third-over.md", "--json"]);
   assert.equal(over.status, 1);
   const parsed = JSON.parse(over.stdout) as {
