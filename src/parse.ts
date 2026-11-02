@@ -3,7 +3,14 @@ import * as path from "node:path";
 import { measureText } from "./count.js";
 import { toDisplayPath } from "./files.js";
 import { refreshDraft } from "./issues.js";
-import type { Draft, ImageRef } from "./types.js";
+import {
+  codeBlocksOnlyBody,
+  findThreadSlices,
+  isClosingFence,
+  openFenceMarker,
+  type TweetSlice,
+} from "./thread.js";
+import type { Draft, ImageRef, TweetPart } from "./types.js";
 
 export interface Section {
   title: string;
@@ -40,6 +47,21 @@ export function parseMarkdown(input: ParseInput): Draft[] {
   const codeBlocksOnly = input.codeBlocksOnly === true;
   const drafts: Draft[] = [];
   sections.forEach((section, index) => {
+    const slices = findThreadSlices(section.title, section.body, codeBlocksOnly);
+    if (slices) {
+      const thread = draftFromThread(
+        input,
+        section,
+        index,
+        wholeFile,
+        fileSlug,
+        fileDir,
+        slices,
+      );
+      if (thread) drafts.push(thread);
+      return;
+    }
+
     const source = codeBlocksOnly
       ? (codeBlocksOnlyBody(section.body) ?? section.body)
       : section.body;
@@ -70,6 +92,61 @@ export function parseMarkdown(input: ParseInput): Draft[] {
     drafts.push(draft);
   });
   return drafts;
+}
+
+function draftFromThread(
+  input: ParseInput,
+  section: Section,
+  index: number,
+  wholeFile: boolean,
+  fileSlug: string,
+  fileDir: string,
+  slices: readonly TweetSlice[],
+): Draft | null {
+  const tweets: TweetPart[] = [];
+  const images: ImageRef[] = [];
+  const urls: string[] = [];
+  for (const slice of slices) {
+    const extracted = extractBody(slice.text, fileDir, section.headingLine + slice.bodyLine);
+    const measured = measureText(extracted.text);
+    images.push(...extracted.images);
+    urls.push(...measured.urls);
+    tweets.push({
+      index: slice.index,
+      text: measured.text,
+      weightedLength: measured.weightedLength,
+      overLimit: measured.weightedLength > input.limit,
+    });
+  }
+  if (tweets.every((tweet) => tweet.text.length === 0) && images.length === 0) return null;
+
+  const weightedLength = tweets.reduce((max, tweet) => Math.max(max, tweet.weightedLength), 0);
+  const titleSlug = slugify(section.title) || `draft-${index + 1}`;
+  const id = wholeFile
+    ? uniqueId(fileSlug, input.usedIds)
+    : uniqueId(`${fileSlug}--${titleSlug}`, input.usedIds);
+  const draft: Draft = {
+    id,
+    title: section.title,
+    file: input.displayPath,
+    line: section.headingLine,
+    text: tweets
+      .map((tweet) => tweet.text)
+      .filter((text) => text.length > 0)
+      .join("\n\n"),
+    weightedLength,
+    limit: input.limit,
+    overLimit: tweets.some((tweet) => tweet.overLimit),
+    tweets,
+    urls,
+    images,
+    duplicateOf: null,
+    similarity: null,
+    issues: [],
+    valid: false,
+  };
+  refreshDraft(draft);
+  return draft;
 }
 
 export function splitSections(markdown: string): Section[] {
@@ -128,55 +205,6 @@ function parseHeading(line: string): string | null {
   const raw = match[2] ?? "";
   const cleaned = raw.replace(/[ \t]+#+\s*$/u, "").trim();
   return cleaned.length > 0 ? cleaned : null;
-}
-
-function openFenceMarker(line: string): string | null {
-  const ticks = /^ {0,3}(`{3,})[^`]*$/u.exec(line);
-  if (ticks) return ticks[1] ?? null;
-  const tildes = /^ {0,3}(~{3,}).*$/u.exec(line);
-  if (tildes) return tildes[1] ?? null;
-  return null;
-}
-
-function isClosingFence(line: string, marker: string): boolean {
-  const char = marker[0] === "~" ? "~" : "`";
-  const re = new RegExp(`^ {0,3}${char}{${marker.length},}\\s*$`, "u");
-  return re.test(line);
-}
-
-/**
- * Null when `body` has no fence. Otherwise fence markers and every line outside
- * a fence are blanked. Newlines stay in place so image line numbers still match
- * the source file. An empty string means the fences were empty.
- */
-function codeBlocksOnlyBody(body: string): string | null {
-  const lines = body.split("\n");
-  const kept: string[] = [];
-  let fence: string | null = null;
-  let found = false;
-
-  for (const line of lines) {
-    if (fence) {
-      if (isClosingFence(line, fence)) {
-        fence = null;
-        kept.push("");
-      } else {
-        kept.push(line);
-      }
-      continue;
-    }
-    const opened = openFenceMarker(line);
-    if (opened) {
-      found = true;
-      fence = opened;
-      kept.push("");
-      continue;
-    }
-    kept.push("");
-  }
-
-  if (!found) return null;
-  return kept.join("\n");
 }
 
 function extractBody(

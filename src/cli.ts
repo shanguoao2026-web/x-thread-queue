@@ -264,6 +264,9 @@ Usage:
   ${TOOL_NAME} schedule <file-or-dir>... [options]
 
 check validates weighted length, local images, and near-duplicates.
+A thread is checked per tweet. Mark one with a heading that contains
+"thread", with tweets numbered 1/n through n/n, or with a line of ---
+inside one code block. The report names any tweet that is over the limit.
 schedule does that and writes a posting plan. Nothing is posted.
 This program does not call the network.
 

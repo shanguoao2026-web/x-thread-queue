@@ -2,7 +2,7 @@
 
 Offline checker and scheduler for X post drafts.
 
-It reads Markdown files, weighs each draft with X's character rules, flags near-duplicates and missing images, and writes a posting schedule as JSON and Markdown. It does not post, upload, authenticate, or contact the network.
+It reads Markdown files, weighs each draft with X's character rules, checks every tweet in a thread on its own, flags near-duplicates and missing images, and writes a posting schedule as JSON and Markdown. It does not post, upload, authenticate, or contact the network.
 
 The sample drafts under `fixtures/` are fictional. `example.com` links are placeholders. The pictures are 1×1 stand-ins, not photographs.
 
@@ -69,7 +69,7 @@ Pass files, directories, or both. Directories are walked for `.md` files. `node_
 
 ## Draft format
 
-ATX headings (`#` through `######`, optional closing hashes, up to three leading spaces) separate posts. The heading is the title. It is not part of the post and it is not weighed. The body under the heading is the post text. With `--code-blocks-only`, a section that contains fenced code uses only the text inside the fences.
+ATX headings (`#` through `######`, optional closing hashes, up to three leading spaces) separate posts. The heading is the title. It is not part of the post and it is not weighed. The body under the heading is the post text. With `--code-blocks-only`, a section that contains fenced code uses only the text inside the fences. A section that is a thread is split into tweets before weighing. See [Threads](#threads).
 
 A heading with an empty body is only a label. Text before the first heading is ignored. A file with no headings is one draft, titled from the file name.
 
@@ -115,7 +115,7 @@ Image paths are resolved from the Markdown file's directory. Angle-bracket desti
 
 ## Character counting
 
-Weighing follows X's twitter-text v3 rules. The text is normalized to NFC first. The default limit is 280. A draft at exactly 280 is valid.
+Weighing follows X's twitter-text v3 rules. The text is normalized to NFC first. The default limit is 280. A draft at exactly 280 is valid, and so is a tweet at exactly 280. The same limit applies to each tweet in a thread. See [Threads](#threads).
 
 - Code points in the light ranges weigh **1**. Those ranges are U+0000–U+10FF, U+2000–U+200D, U+2010–U+201F, and U+2032–U+2037. That covers ASCII, most Latin, and a few punctuation marks such as the em dash.
 - Every other code point weighs **2**. CJK ideographs, hiragana, katakana, hangul, fullwidth letters, and many symbols (including the ellipsis `…`) are in this group.
@@ -136,6 +136,22 @@ Weighing follows X's twitter-text v3 rules. The text is normalized to NFC first.
 | `👨‍👩‍👧` | 2 |
 | em dash `—` | 1 |
 | ellipsis `…` | 2 |
+
+## Threads
+
+A section is one post unless it is a thread. Each tweet is weighed on its own against `--limit`. The section is over the limit only when at least one tweet is over the limit. A thread whose tweets are each under the limit is valid even when the tweets together weigh more than the limit. The report names the tweet, for example `Tweet 3 weighted length 301 exceeds the limit of 280`. The issue's `tweet` field is that number.
+
+A section is a thread in any of these cases:
+
+- The heading contains the word `thread` or `threads`, in any case, and the body separates tweets with a full `1/N` … `N/N` run or with a line that is exactly `---`.
+- The body has a complete marker run `1/N`, `2/N`, … `N/N` for an `N` of at least 2. The heading does not have to say thread. A marker is a whole line, or the start of a line with the tweet after it (`1/5 The pier is dark.`). The marker is not weighed. Text before `1/N` is a note and is not a tweet. A partial run, such as only `1/5` and `2/5`, stays one post.
+- One fenced code block has tweets separated by a line that is exactly `---`. Fence markers are not part of a tweet. Text outside that fence is not part of the thread, with or without `--code-blocks-only`. Put notes outside the fence.
+
+A line of `---` in ordinary prose does not split a post. A heading such as `Threaded needle` is not a thread heading, because `thread` is not a whole word there. A single post is still weighed as one block. `--code-blocks-only` is unchanged for a post that is not a thread: fence text is the post, and lines outside the fence are ignored.
+
+A thread stays one draft and one schedule slot. `tweets` lists each tweet's text, 1-based index, weighted length, and `overLimit` flag. `weightedLength` on the draft is the longest tweet, which is what the limit uses. `text` is the tweets joined by a blank line, so the weighed length of `text` can be over the limit while `overLimit` is false.
+
+`fixtures/threads/five-short.md` is five numbered tweets under a heading that contains `Thread`. Each tweet is under 280 and together they weigh more than 280, so `check` exits 0. `fixtures/threads/third-over.md` is five tweets inside one code block, separated by `---`, and tweet 3 is over 280. `check` exits 1 and names tweet 3. Notes under that fence are not tweets.
 
 ## Near-duplicates
 
@@ -159,7 +175,7 @@ Drafts with issues are skipped unless `--include-invalid` is set. Order is file 
 
 ## Output
 
-JSON from `check` is an analysis: drafts, weighted lengths, URLs, images, issues, and duplicate pairs. JSON from `schedule` adds `options`, `notes`, `schedule`, and `skipped`.
+JSON from `check` is an analysis: drafts, weighted lengths, per-tweet lengths when the draft is a thread, URLs, images, issues, and duplicate pairs. JSON from `schedule` adds `options`, `notes`, `schedule`, and `skipped`.
 
 Markdown from `schedule` is a queue table, the text of each slot, skipped drafts, and duplicate pairs.
 
@@ -183,4 +199,4 @@ The program reads and writes local files only. It does not import an HTTP client
 npm test
 ```
 
-The suite covers weighing, Markdown splitting, `--code-blocks-only`, image checks, near-duplicates, the UTC schedule, both output formats, and the CLI. It also scans `src/` for network and process APIs.
+The suite covers weighing, Markdown splitting, `--code-blocks-only`, threads (a 5-tweet thread whose total is over the limit, and a thread whose third tweet is over), image checks, near-duplicates, the UTC schedule, both output formats, and the CLI. It also scans `src/` for network and process APIs.

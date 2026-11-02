@@ -3,11 +3,26 @@ import type { Draft, Issue } from "./types.js";
 export function issuesFor(
   draft: Pick<
     Draft,
-    "overLimit" | "weightedLength" | "limit" | "images" | "duplicateOf" | "similarity"
+    | "overLimit"
+    | "weightedLength"
+    | "limit"
+    | "images"
+    | "duplicateOf"
+    | "similarity"
+    | "tweets"
   >,
 ): Issue[] {
   const issues: Issue[] = [];
-  if (draft.overLimit) {
+  const overTweets = (draft.tweets ?? []).filter((tweet) => tweet.overLimit);
+  if (overTweets.length > 0) {
+    for (const tweet of overTweets) {
+      issues.push({
+        code: "over_limit",
+        message: `Tweet ${tweet.index} weighted length ${tweet.weightedLength} exceeds the limit of ${draft.limit}`,
+        tweet: tweet.index,
+      });
+    }
+  } else if (draft.overLimit) {
     issues.push({
       code: "over_limit",
       message: `Weighted length ${draft.weightedLength} exceeds the limit of ${draft.limit}`,

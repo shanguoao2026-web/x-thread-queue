@@ -19,6 +19,11 @@ export function formatCheck(analysis: Analysis): string {
   for (const draft of analysis.drafts) {
     lines.push(draftHeading(draft));
     lines.push(`  ${draft.file}:${draft.line}`);
+    if (draft.tweets && draft.tweets.length > 1) {
+      for (const tweet of draft.tweets) {
+        lines.push(`  - tweet ${tweet.index}: ${tweet.weightedLength}/${draft.limit}`);
+      }
+    }
     for (const issue of draft.issues) {
       lines.push(`  - ${issue.code}: ${issue.message}`);
     }
@@ -84,6 +89,11 @@ export function formatSchedule(report: ScheduleReport): string {
       lines.push(`- File: ${entry.file}:${entry.line}`);
       lines.push(`- Weighted length: ${entry.weightedLength}/${report.limit}`);
       const draft = byId.get(entry.draftId);
+      if (draft?.tweets && draft.tweets.length > 1) {
+        for (const tweet of draft.tweets) {
+          lines.push(`- Tweet ${tweet.index}: ${tweet.weightedLength}/${report.limit}`);
+        }
+      }
       if (draft && draft.images.length > 0) {
         for (const image of draft.images) {
           lines.push(`- Image: ${image.source}`);
@@ -107,6 +117,12 @@ export function formatSchedule(report: ScheduleReport): string {
       lines.push(`- Draft: \`${entry.draftId}\``);
       lines.push(`- File: ${entry.file}:${entry.line}`);
       lines.push(`- Weighted length: ${entry.weightedLength}/${report.limit}`);
+      const skippedDraft = report.drafts.find((draft) => draft.id === entry.draftId);
+      if (skippedDraft?.tweets && skippedDraft.tweets.length > 1) {
+        for (const tweet of skippedDraft.tweets) {
+          lines.push(`- Tweet ${tweet.index}: ${tweet.weightedLength}/${report.limit}`);
+        }
+      }
       for (const issue of entry.issues) {
         lines.push(`- ${issue.code}: ${issue.message}`);
       }

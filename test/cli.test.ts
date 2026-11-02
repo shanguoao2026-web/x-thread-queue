@@ -70,6 +70,7 @@ test("help and version", () => {
   assert.match(help.stdout, /--per-day/);
   assert.match(help.stdout, /--min-gap-hours/);
   assert.match(help.stdout, /--code-blocks-only/);
+  assert.match(help.stdout, /per tweet/);
   assert.match(help.stdout, /check/);
   assert.match(help.stdout, /schedule/);
 
@@ -203,6 +204,45 @@ test("code-blocks-only ignores a translation outside the fence", () => {
   assert.match(scheduled.stdout, /bilingual--pier-light/);
   assert.match(scheduled.stdout, /The pier light stays on after the shops close\./);
   assert.equal(scheduled.stdout.includes("中文"), false);
+});
+
+test("a thread is checked per tweet", () => {
+  const under = run(["check", "fixtures/threads/five-short.md"]);
+  assert.equal(under.status, 0);
+  assert.match(under.stdout, /tweet 1: /);
+  assert.match(under.stdout, /tweet 5: /);
+  assert.equal(under.stdout.includes("over_limit"), false);
+
+  const over = run(["check", "fixtures/threads/third-over.md", "--json"]);
+  assert.equal(over.status, 1);
+  const parsed = JSON.parse(over.stdout) as {
+    drafts: {
+      text: string;
+      overLimit: boolean;
+      tweets?: { index: number; text: string; overLimit: boolean }[];
+      issues: { code: string; message: string; tweet?: number }[];
+    }[];
+  };
+  const draft = parsed.drafts[0];
+  assert.ok(draft);
+  assert.equal(draft.overLimit, true);
+  assert.equal(draft.tweets?.[2]?.index, 3);
+  assert.equal(draft.tweets?.[2]?.overLimit, true);
+  assert.equal(draft.issues[0]?.tweet, 3);
+  assert.match(draft.issues[0]?.message ?? "", /Tweet 3 weighted length/);
+  assert.equal(draft.text.includes("中文"), false);
+
+  const same = run(["check", "fixtures/threads/third-over.md", "--code-blocks-only", "--json"]);
+  assert.equal(same.status, 1);
+  const fenced = JSON.parse(same.stdout) as {
+    drafts: { text: string; tweets?: { text: string }[] }[];
+  };
+  assert.equal(fenced.drafts[0]?.text, draft.text);
+  assert.deepEqual(
+    fenced.drafts[0]?.tweets?.map((tweet) => tweet.text),
+    draft.tweets?.map((tweet) => tweet.text),
+  );
+  assert.equal(fenced.drafts[0]?.text.includes("中文"), false);
 });
 
 test("bad arguments exit 2 and do not write a plan", () => {
