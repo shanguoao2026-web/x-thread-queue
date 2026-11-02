@@ -1,0 +1,24 @@
+{
+  "name": "x-thread-queue",
+  "version": "1.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "description": "Offline checker and scheduler for X post drafts. Never posts and never calls the network.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "x-thread-queue": "./dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "queue": "node dist/src/cli.js",
+    "start": "node dist/src/cli.js",
+    "test": "tsc -p tsconfig.json && node --test --test-reporter spec \"dist/test/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "typescript": "^5.6.3"
+  }
+}
